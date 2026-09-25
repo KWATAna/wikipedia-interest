@@ -1,0 +1,130 @@
+{
+  "topic": "Astronomy interest on Ukrainian Wikipedia",
+  "question": "Is astronomy interest on Ukrainian Wikipedia growing over the two years ending August 2026, and how reliable is the signal?",
+  "assumptions": [
+    "The broad overview article is a proxy for astronomy attention, not all astronomy-related reading.",
+    "Wikipedia article requests do not measure unique people, product demand, or willingness to pay.",
+    "The Ukrainian Wikipedia edition is not limited to readers located in Ukraine."
+  ],
+  "screening": {
+    "minRecentViews": 200,
+    "minConfidence": "medium",
+    "requireRawGrowth": true,
+    "requireShareGrowth": true
+  },
+  "period": {
+    "first": "2024-09",
+    "last": "2026-08"
+  },
+  "generatedAt": "2026-09-25T12:37:27.426Z",
+  "selectedCandidate": null,
+  "results": [
+    {
+      "language": "uk",
+      "articles": [
+        "Астрономія"
+      ],
+      "months": [
+        "2024-09",
+        "2024-10",
+        "2024-11",
+        "2024-12",
+        "2025-01",
+        "2025-02",
+        "2025-03",
+        "2025-04",
+        "2025-05",
+        "2025-06",
+        "2025-07",
+        "2025-08",
+        "2025-09",
+        "2025-10",
+        "2025-11",
+        "2025-12",
+        "2026-01",
+        "2026-02",
+        "2026-03",
+        "2026-04",
+        "2026-05",
+        "2026-06",
+        "2026-07",
+        "2026-08"
+      ],
+      "monthlyViews": {
+        "2024-09": 4687,
+        "2024-10": 1776,
+        "2024-11": 1746,
+        "2024-12": 1634,
+        "2025-01": 1558,
+        "2025-02": 1296,
+        "2025-03": 1068,
+        "2025-04": 1019,
+        "2025-05": 789,
+        "2025-06": 361,
+        "2025-07": 305,
+        "2025-08": 375,
+        "2025-09": 1642,
+        "2025-10": 635,
+        "2025-11": 557,
+        "2025-12": 622,
+        "2026-01": 449,
+        "2026-02": 425,
+        "2026-03": 410,
+        "2026-04": 405,
+        "2026-05": 600,
+        "2026-06": 281,
+        "2026-07": 322,
+        "2026-08": 360
+      },
+      "loadedMonths": 24,
+      "articleObservations": 24,
+      "coverageComplete": true,
+      "observedViewsPrior": 16614,
+      "observedViewsRecent": 6708,
+      "viewsPrior": 16614,
+      "viewsRecent": 6708,
+      "viewsYoyPct": -59.624413145539904,
+      "sharePriorPerMillion": 18.45355985113964,
+      "shareRecentPerMillion": 9.886450053366934,
+      "shareYoyPct": -46.42524188764384,
+      "positiveYoyMonths": 1,
+      "negativeYoyMonths": 11,
+      "comparableYoyMonths": 12,
+      "direction": "falling",
+      "peakMonthShare": 0.2821114722523173,
+      "confidence": "medium",
+      "flags": []
+    }
+  ],
+  "sources": [
+    {
+      "language": "uk",
+      "rationale": "Broad Ukrainian overview linked from en:Astronomy and confirmed by the lowercase search query астрономія.",
+      "articles": [
+        {
+          "title": "Астрономія",
+          "requestedTitle": "Астрономія",
+          "pageId": 827,
+          "url": "https://uk.wikipedia.org/wiki/%D0%90%D1%81%D1%82%D1%80%D0%BE%D0%BD%D0%BE%D0%BC%D1%96%D1%8F",
+          "analyticsUrl": "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/uk.wikipedia.org/all-access/user/%D0%90%D1%81%D1%82%D1%80%D0%BE%D0%BD%D0%BE%D0%BC%D1%96%D1%8F/monthly/20240901/20260831",
+          "analyticsStatus": 200,
+          "fetchedAt": "2026-09-25T11:51:03.882Z",
+          "cacheHit": true,
+          "resolutionUrl": "https://uk.wikipedia.org/w/api.php?action=query&titles=%D0%90%D1%81%D1%82%D1%80%D0%BE%D0%BD%D0%BE%D0%BC%D1%96%D1%8F&redirects=1&prop=info&format=json&formatversion=2"
+        }
+      ],
+      "projectAnalyticsUrl": "https://wikimedia.org/api/rest_v1/metrics/pageviews/aggregate/uk.wikipedia.org/all-access/user/monthly/2024090100/2026083100",
+      "projectFetchedAt": "2026-09-25T11:51:03.931Z",
+      "projectCacheHit": true
+    }
+  ],
+  "methodology": {
+    "access": "all-access",
+    "agent": "user",
+    "granularity": "monthly",
+    "comparison": "recent 12 months vs preceding 12 months",
+    "share": "sum of selected article views per million edition pageviews",
+    "missingArticleMonths": "zero only when edition aggregate exists",
+    "reliability": "heuristic: complete edition data, volume, matched-month directional consistency, spike concentration"
+  }
+}

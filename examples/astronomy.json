@@ -1,0 +1,31 @@
+{
+  "topic": "Astronomy course interest",
+  "question": "Which language editions show a growing astronomy signal for course discovery?",
+  "editions": [
+    {
+      "language": "uk",
+      "articles": ["Астрономія"],
+      "rationale": "Broad astronomy overview; a proxy for topic attention, not course demand."
+    },
+    {
+      "language": "pl",
+      "articles": ["Astronomia"],
+      "rationale": "Linked broad astronomy overview for comparison."
+    },
+    {
+      "language": "cs",
+      "articles": ["Astronomie"],
+      "rationale": "Linked broad astronomy overview for comparison."
+    }
+  ],
+  "screening": {
+    "minRecentViews": 200,
+    "minConfidence": "medium",
+    "requireRawGrowth": true,
+    "requireShareGrowth": true
+  },
+  "assumptions": [
+    "Each article represents the same broad subject, but article popularity may differ from interest in a course.",
+    "Wikipedia language editions are not country audiences."
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "topic": "Astronomy interest on Ukrainian Wikipedia",
+  "question": "Is astronomy interest on Ukrainian Wikipedia growing over the two years ending August 2026, and how reliable is the signal?",
+  "editions": [
+    {
+      "language": "uk",
+      "articles": ["Астрономія"],
+      "rationale": "Broad Ukrainian overview linked from en:Astronomy and confirmed by the lowercase search query астрономія."
+    }
+  ],
+  "assumptions": [
+    "The broad overview article is a proxy for astronomy attention, not all astronomy-related reading.",
+    "Wikipedia article requests do not measure unique people, product demand, or willingness to pay.",
+    "The Ukrainian Wikipedia edition is not limited to readers located in Ukraine."
+  ]
+}
