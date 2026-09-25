@@ -4,6 +4,23 @@ A standalone [Agent Skills](https://agentskills.io/specification) package for co
 
 The agent-facing instructions are in [SKILL.md](SKILL.md). This README explains the workflow and how to run the project directly.
 
+## Give it to another agent
+
+Share this repository or the source ZIP, then place the **whole** `wikipedia-interest` directory in a skill location that the person's agent scans. Keep `SKILL.md`, `scripts/`, `assets/`, `package.json`, and `package-lock.json` together; copying only `SKILL.md` leaves out the analysis code.
+
+For a local Codex agent, install the ZIP under `~/.agents/skills/`; for Claude Code, use `~/.claude/skills/` instead. Those are the [Codex](https://learn.chatgpt.com/docs/build-skills) and [Claude Code](https://code.claude.com/docs/en/skills) personal skill locations. For example, with Codex:
+
+```sh
+mkdir -p ~/.agents/skills
+unzip wikipedia-interest-skill.zip -d ~/.agents/skills
+cd ~/.agents/skills/wikipedia-interest
+npm ci
+```
+
+To install from GitHub once the repository is published, clone it directly to `~/.agents/skills/wikipedia-interest` (or `~/.claude/skills/wikipedia-interest`), then run `npm ci` there. The agent needs shell access to run Node.js 20+ and network access to Wikimedia for fresh data. Set `WIKIMEDIA_USER_AGENT` with a real operator contact in the agent's environment, or have the agent pass `--user-agent` for live requests. Restart the agent if the skill does not appear.
+
+Then ask, for example: “Use `$wikipedia-interest` to compare interest in intermittent fasting on Polish and Czech Wikipedia over the latest 24 months. Check that the selected articles cover comparable topics, create the chart and one-page PDF, and explain raw growth, edition-relative growth, reliability, and limitations.” In Claude Code, invoke `/wikipedia-interest` instead. A matching natural-language request can also activate the skill automatically. Agents without built-in skill discovery can be given the folder and told to read `SKILL.md` and run the bundled CLI.
+
 ## Workflow logic
 
 ```mermaid
