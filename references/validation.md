@@ -1,5 +1,36 @@
 # Validation record
 
+## Phase 5 checks (2026-09-27)
+
+- `npm run typecheck`, `git diff --check`, and all 77 tests passed. The new cases cover the rising-direction default and explicit override, rejection of a `null` override, a high-quality steady decline, positive annual growth with mixed monthly direction, unknown and disabled checks, ranking of multiple passing editions, and tiny nonzero growth that must not print as `+0.0%`.
+- A controlled local analysis wrote `metrics.json`, `chart.svg`, and a one-page PDF without live Wikimedia requests. Both editions in `metrics.json` had five screening checks; the selected edition had rank 1, while the other showed its failed checks. The SVG parsed, and the PDF had one page. A separate six-edition report showed selected, lower-ranked, mixed-direction, declining, low-volume, and low-quality outcomes on one readable page.
+- Selected, no-selected, six-edition, Arabic-next-step, and saved astronomy PDFs were rendered and visually checked for clipping and overlap. The Arabic validation action rendered with the appropriate font. The saved astronomy metrics rendered without a made-up Phase 5 assessment or direction rule, labeling those details as unrecorded.
+- A read-only review found two issues: explicit `null` initially bypassed the direction-override validator, and a tiny positive growth rate printed as `+0.0%` while passing. Both were reproduced with failing tests, fixed, and rechecked with the full suite.
+
+## Phase 4 checks (2026-09-26)
+
+- `npm run typecheck`, `git diff --check`, and all 66 tests passed. Focused tests cover a recent-year spike, a prior-year spike, tied peaks, missing article and edition months, all-zero traffic, a zero 11-month prior baseline, opposing article trends, and a complete article despite a missing edition month.
+- A controlled June spike gives 1,200 to 2,200 ordinary views (+83.3%). Removing June 2025 and June 2026 gives 1,100 to 1,100 (0%) and the same 0% edition-relative share change. `metrics.json` records the excluded pair, both 11-month totals and shares, changed-direction flags, and each selected article's trend. Another controlled case kept `selectedCandidate: "en"` under the existing screen while its 11-month growth turned negative; the report headline named that sensitivity. The screen and 12-month values were not changed.
+- The controlled `chart.svg` rendered a valid SVG. Complete, spike-sensitive, incomplete, six-edition/six-article, and saved legacy metrics rendered as one-page A4 PDFs. The latest spike, six-edition, and legacy pages were visually checked for table spacing, legibility, and clipping. The legacy report says the 11-month check was `not run`, without inventing Phase 4 fields. No live Wikimedia requests were made.
+
+## Phase 3 checks (2026-09-26)
+
+- `npm run typecheck` passed and `npm test` passed all 53 tests. The new tests cover Wikidata ID matching and mismatch review before any pageview request, missing IDs, redirect versus normalization, paginated move logs, filtering by the moved page's `logpage`, a broken title chain, and a failed or incomplete move lookup.
+- A saved event for enwiki page ID `9988187` moves `Twitter` to `X (social network)` on 2026-02-25. A controlled 24-month analysis uses the old title through January, marks February `null`, and uses the new title from March. Even when both fake API responses contain counts for every month, each month accepts at most one title. The unknown month blocks complete growth and candidate selection. The output records concept IDs, move evidence, lookup URLs, and title-specific traffic ranges in `metrics.json`.
+- Complete and moved-page reports, plus a re-render of the saved astronomy metrics, were generated and visually inspected as legible one-page A4 PDFs. The moved-page PDF explains why growth is unavailable; the legacy astronomy PDF renders without inventing new audit fields. The controlled run also produced a valid `chart.svg`. No fresh Wikimedia request was made; the move fixture cites its retrieval date and source URLs.
+
+## Phase 2 checks (2026-09-26)
+
+- `npm run typecheck` passed and `npm test` passed all 39 tests. A two-article case exposes one rising and one falling article even when their combined count is flat; its edition denominator reproduces the share of 100 selected-article views per million edition views. Tests also verify reported counts, inferred zeroes, unknown article months, and missing edition months in the new breakdown fields.
+- The PDF names the largest recent article when every selected article has 12 known recent months, and says the comparison is incomplete when one count is unknown. The existing combined values, screening rule, and selected candidate behavior are unchanged.
+- Complete and incomplete two-article reports and the saved astronomy metrics were rendered as one-page A4 PDFs and visually inspected. The astronomy metrics predates the new breakdown fields, so its re-rendered PDF labels article comparison incomplete. No fresh Wikimedia request was made because no operator contact was configured.
+
+## Phase 1 checks (2026-09-26)
+
+- `npm run typecheck` passed and `npm test` passed all 37 tests. The new cases cover a 404 for one of two selected articles, an omitted zero-view month in a successful response, exhausted 503 and network requests, an authorization failure, selection of a complete edition while another is unavailable, and preservation and flagging of observed article counts when edition traffic is missing.
+- The 404 case leaves complete growth and candidate selection unavailable while preserving observed counts from the other article. New analyses label each article month `reported`, `zero`, or `unknown` and retain the request URL, status, and retrieval time.
+- A report generated from the saved astronomy metrics and a synthetic unavailable-data variant both rendered as one A4 page. Their headings and methodology text were visually checked. No fresh Wikimedia request was made for these checks.
+
 ## Automated checks
 
 - `npm ci` installs exact versions from `package-lock.json`. The `.ts` CLI runs directly through pinned `tsx`; `npm run typecheck` uses strict TypeScript with `noEmit`.

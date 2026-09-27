@@ -7,7 +7,8 @@ import { createWriteStream } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Analysis } from './types.ts';
+import type { Analysis, LanguageResult } from './types.ts';
+import { formatPercent } from './format.ts';
 
 const ASSETS = join(dirname(fileURLToPath(import.meta.url)), '..', 'assets');
 const FONTS = {
@@ -61,7 +62,7 @@ const xml = (value: unknown): string => String(value).replaceAll('&', '&amp;').r
   .replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 const number = (value: number | null | undefined): string => value === null || value === undefined ? 'n/a'
   : new Intl.NumberFormat('en-US').format(value);
-const pct = (value: number | null): string => value === null || !Number.isFinite(value) ? 'n/a' : `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
+export const pct = formatPercent;
 const axisNumber = (value: number): string => new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
 
 export function chartTicks(maximum: number): number[] {
@@ -154,17 +155,118 @@ function clipped(value: unknown, max: number): string {
 }
 
 export function pdfLayout(analysis: Analysis) {
-  const sourceHeadingY = 450 + analysis.results.length * 21;
+  const shift = analysis.results.length >= 5 ? 40 : 0;
+  const sourceHeadingY = 450 - shift + analysis.results.length * 21;
   const firstSourceY = sourceHeadingY + 18;
-  const sourcesBottom = firstSourceY + analysis.sources.length * 15;
+  const sourcesBottom = firstSourceY + analysis.sources.length * 20;
   const notesY = sourcesBottom + 7;
+  const nextStepY = notesY + 14;
+  const nextStepBottom = nextStepY + 15;
+  const assumptionsY = nextStepBottom + 4;
   const assumptionsHeight = analysis.results.length <= 2 ? 70
-    : analysis.results.length <= 4 ? 48 : 28;
-  const notesBottom = notesY + 15 + assumptionsHeight;
+    : analysis.results.length <= 4 ? 48 : 20;
+  const notesBottom = assumptionsY + assumptionsHeight;
   const methodY = Math.max(notesBottom + 8, 696);
   const limitsY = methodY + 33;
   return { sourceHeadingY, firstSourceY, sourcesBottom, notesY, notesBottom,
-    assumptionsHeight, methodY, limitsY, limitsBottom: limitsY + 34, footerY: 823 };
+    nextStepY, nextStepBottom, assumptionsY, assumptionsHeight,
+    shift, methodY, limitsY, limitsBottom: limitsY + 34, footerY: 823 };
+}
+
+const FAILED_LABELS = { 'recent-volume': 'views', 'signal-quality': 'quality',
+  'raw-growth': 'raw growth', 'share-growth': 'share growth',
+  'monthly-direction': 'monthly trend' } as const;
+
+export function screeningOutcomeLabel(result: LanguageResult): string {
+  const assessment = result.screeningAssessment;
+  if (!assessment) return 'Screen details not recorded in this saved result.';
+  if (assessment.eligibleRank === 1) return 'Screen: selected research lead (rank 1).';
+  if (assessment.eligibleRank !== null) return `Screen: passed (rank ${assessment.eligibleRank}, lower than selected).`;
+  const failed = assessment.checks.filter(check => check.status === 'fail')
+    .map(check => FAILED_LABELS[check.criterion]);
+  return failed.length ? `Screen: failed - ${failed.join(', ')}.` : 'Screen: result unavailable; see metrics.json.';
+}
+
+export function screeningCriteriaLabel(analysis: Analysis): string {
+  const criteria = analysis.screening;
+  if (!criteria) return 'Screen rules not recorded in this saved result.';
+  const monthly = criteria.requireRisingDirection === undefined ? 'not recorded (older result)'
+    : criteria.requireRisingDirection ? 'rising' : 'optional';
+  return `Screen: >=${number(criteria.minRecentViews)} recent views; signal quality >=${criteria.minConfidence}; `
+    + `raw growth ${criteria.requireRawGrowth ? '>0%' : 'optional'}; `
+    + `share growth ${criteria.requireShareGrowth ? '>0%' : 'optional'}; monthly direction ${monthly}.`;
+}
+
+export function reportHeadline(analysis: Analysis): string {
+  const moveMonth = analysis.results.some(result => result.flags.some(flag =>
+    flag.startsWith('title move month uncertain:')));
+  const historyUncertain = analysis.results.some(result => result.flags.some(flag =>
+    flag.startsWith('title history uncertain:')));
+  if (moveMonth) return 'A page move leaves a month unknown; full growth is unavailable for that edition. See metrics.json.';
+  if (historyUncertain) return 'Known former title could not be verified; growth is unavailable for that edition. See metrics.json.';
+  if (analysis.conceptCheck?.status === 'mismatch-reviewed') {
+    return 'Concept IDs differ across editions; page selection was reviewed. Check metrics.json before comparing.';
+  }
+  const unavailable = analysis.results.some(result => result.flags.some(flag => flag.startsWith('article views unknown:')));
+  const sensitive = analysis.results.find(result => result.peakPairSensitivity?.status === 'available'
+    && (result.peakPairSensitivity.rawDirectionChanged || result.peakPairSensitivity.shareDirectionChanged));
+  if (sensitive && !unavailable) return analysis.selectedCandidate
+    ? `${analysis.selectedCandidate} leads the 12-month screen, but growth changes direction after the peak pair is removed. See metrics.json.`
+    : `12-month growth in ${sensitive.language} changes direction after the peak pair is removed. See metrics.json.`;
+  if (analysis.selectedCandidate) return unavailable
+    ? `${analysis.selectedCandidate} leads the screen. Some article views are unavailable; check metrics.json before comparing other editions.`
+    : `${analysis.selectedCandidate} is the top screened research lead. Validate demand with potential users.`;
+  return unavailable
+    ? 'Article views unavailable in one or more editions. Growth cannot be compared for them; check metrics.json.'
+    : 'No edition clears the screening rule. Review article selection or gather more evidence.';
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+export function sensitivityTableValue(result: LanguageResult): { growth: string; pair: string } {
+  const check = result.peakPairSensitivity;
+  if (!check) return { growth: 'not run', pair: '' };
+  if (check.status === 'incomplete-data') return { growth: 'n/a', pair: 'unknown months' };
+  if (check.status === 'zero-traffic') return { growth: 'n/a', pair: 'zero traffic' };
+  if (!check.excludedMonths) return { growth: 'n/a', pair: '' };
+  const prior = check.excludedMonths.prior;
+  const recent = check.excludedMonths.recent;
+  const pair = `${MONTHS[Number(prior.slice(5)) - 1]} ${prior.slice(2, 4)}/${recent.slice(2, 4)}`;
+  if (check.status === 'zero-baseline') return { growth: 'n/a (zero prior)', pair };
+  const changed = check.rawDirectionChanged || check.shareDirectionChanged;
+  return { growth: `${pct(check.viewsYoyPct)} / ${pct(check.shareYoyPct)}${changed ? '*' : ''}`, pair };
+}
+
+export function articleTrendLabel(result: LanguageResult): string {
+  const trends = result.articleTrends;
+  if (!trends) return result.articles.join(' · ');
+  if (trends.length <= 2) return trends.map(trend => `${trend.title} ${trend.viewsYoyPct !== null
+    ? pct(trend.viewsYoyPct) : trend.direction === 'unavailable' ? 'n/a' : trend.direction}`).join(' · ');
+  const count = (direction: typeof trends[number]['direction']) =>
+    trends.filter(trend => trend.direction === direction).length;
+  return `${count('rising')} up · ${count('falling')} down · ${count('flat')} flat`
+    + `${count('unavailable') ? ` · ${count('unavailable')} unknown` : ''}`;
+}
+
+export function recentArticleSummary(result: LanguageResult): string {
+  const recentMonths = result.months.slice(-12);
+  const articleViews = result.articleMonthlyViews ?? {};
+  if (recentMonths.length !== 12 || result.articles.length === 0) {
+    return 'Recent article comparison incomplete · metrics.json';
+  }
+  const totals = result.articles.map(title => {
+    const values = recentMonths.map(month => articleViews[title]?.[month]);
+    return { title, views: values.every(value => typeof value === 'number' && Number.isFinite(value))
+      ? values.reduce<number>((sum, value) => sum + (value as number), 0) : null };
+  });
+  if (totals.some(article => article.views === null)) {
+    return 'Recent article comparison incomplete · metrics.json';
+  }
+  const largest = Math.max(...totals.map(article => article.views!));
+  const leaders = totals.filter(article => article.views === largest).map(article => article.title);
+  return leaders.length === 1
+    ? `Top recent article: ${leaders[0]} (${number(largest)} views) · metrics.json`
+    : `Joint top recent articles: ${leaders.join(' · ')} (${number(largest)} each) · metrics.json`;
 }
 
 export async function writePdf(analysis: Analysis, filename: string): Promise<void> {
@@ -187,64 +289,72 @@ export async function writePdf(analysis: Analysis, filename: string): Promise<vo
   doc.fillColor('#475569').fontSize(9);
   drawMixedText(doc, analysis.question || 'Topic and language edition comparison', margin, 79,
     { width: usable, height: 28, ellipsis: true });
-  const candidate = analysis.selectedCandidate;
-  const headline = candidate
-    ? `${candidate} shows the strongest screening signal. Investigate this audience next; validate demand separately.`
-    : 'No edition clears the screening rule. Review article selection or gather more evidence.';
   doc.roundedRect(margin, 109, usable, 53, 7).fill('#eff6ff');
-  doc.fillColor('#1e3a8a').fontSize(10.5).text(headline, margin + 12, 119,
+  doc.fillColor('#1e3a8a').fontSize(10.5).text(reportHeadline(analysis), margin + 12, 119,
     { width: usable - 24, height: 34, ellipsis: true });
-  drawChart(doc, analysis, margin, 176, usable, 190);
+  const layout = pdfLayout(analysis);
+  drawChart(doc, analysis, margin, 176, usable, 190 - layout.shift);
   let lx = margin;
   analysis.results.forEach((result, i) => {
-    doc.circle(lx + 4, 378, 3.2).fill(COLORS[i % COLORS.length]);
-    doc.fillColor('#334155').fontSize(8).text(result.language, lx + 12, 373, { width: 39 });
+    doc.circle(lx + 4, 378 - layout.shift, 3.2).fill(COLORS[i % COLORS.length]);
+    doc.fillColor('#334155').fontSize(8).text(result.language, lx + 12, 373 - layout.shift, { width: 39 });
     lx += 75;
   });
-  doc.fillColor('#0f172a').fontSize(10).text('Evidence by language edition', margin, 397);
-  const cols = [margin, margin + 75, margin + 173, margin + 243, margin + 338, margin + 432];
-  doc.rect(margin, 419, usable, 21).fill('#f1f5f9');
-  const headers = ['Edition', 'Recent 12m', 'Views YoY', 'Share / 1m', 'Share YoY', 'Reliability'];
-  headers.forEach((label, i) => doc.fillColor('#334155').fontSize(7.3).text(label, cols[i] + 4, 425,
+  doc.fillColor('#0f172a').fontSize(10).text('Evidence by language edition', margin, 397 - layout.shift);
+  const cols = [margin, margin + 65, margin + 140, margin + 208, margin + 289,
+    margin + 366, margin + 453];
+  doc.rect(margin, 419 - layout.shift, usable, 21).fill('#f1f5f9');
+  const headers = ['Edition', 'Recent 12m', 'Views YoY', 'Share / 1m', 'Share YoY', '11m raw/share', 'Signal quality'];
+  headers.forEach((label, i) => doc.fillColor('#334155').fontSize(7).text(label, cols[i] + 4, 425 - layout.shift,
     { width: (cols[i + 1] ?? margin + usable) - cols[i] - 5 }));
   analysis.results.forEach((result, i) => {
-    const rowY = 440 + i * 21;
+    const rowY = 440 - layout.shift + i * 21;
     if (i % 2 === 1) doc.rect(margin, rowY, usable, 21).fill('#f8fafc');
     const values = [result.language, number(result.viewsRecent), pct(result.viewsYoyPct),
       result.shareRecentPerMillion === null ? 'n/a' : result.shareRecentPerMillion.toFixed(2),
-      pct(result.shareYoyPct), result.confidence];
-    values.forEach((value, j) => doc.fillColor('#0f172a').fontSize(8.1).text(value, cols[j] + 4, rowY + 5,
-      { width: (cols[j + 1] ?? margin + usable) - cols[j] - 5, height: 12, ellipsis: true }));
+      pct(result.shareYoyPct), sensitivityTableValue(result).growth, result.confidence];
+    values.forEach((value, j) => {
+      const width = (cols[j + 1] ?? margin + usable) - cols[j] - 5;
+      doc.fillColor('#0f172a').fontSize(j === 5 ? 6.9 : 8.1).text(value, cols[j] + 4,
+        rowY + (j === 5 ? 1 : 5), { width, height: j === 5 ? 9 : 12, ellipsis: true });
+      if (j === 5) doc.fillColor('#64748b').fontSize(6.5).text(sensitivityTableValue(result).pair,
+        cols[j] + 4, rowY + 11, { width, height: 8, ellipsis: true });
+    });
   });
-  const layout = pdfLayout(analysis);
-  doc.fillColor('#0f172a').fontSize(9).text('Articles and source links', margin, layout.sourceHeadingY);
+  doc.fillColor('#0f172a').fontSize(9).text('Articles and recent contributors', margin, layout.sourceHeadingY);
   let sourceY = layout.firstSourceY;
   for (const source of analysis.sources) {
-    const articles = source.articles.map(article => article.title).join(' · ');
-    const label = `${source.language}: ${clipped(articles, 95)}`;
+    const result = analysis.results.find(item => item.language === source.language);
+    const articles = result ? articleTrendLabel(result) : source.articles.map(article => article.title).join(' · ');
+    const label = `${source.language}: ${articles}`;
     doc.fillColor('#2563eb').fontSize(7.7);
     drawMixedText(doc, label, margin, sourceY,
-      { width: usable, height: 13, ellipsis: true, link: source.articles[0]?.url });
-    sourceY += 15;
+      { width: 244, height: 9, ellipsis: true, link: source.articles[0]?.url });
+    const summary = result ? recentArticleSummary(result) : 'Recent article comparison incomplete · metrics.json';
+    doc.fillColor('#334155').fontSize(7.2);
+    drawMixedText(doc, summary, margin + 248, sourceY,
+      { width: usable - 248, height: 9, ellipsis: true });
+    doc.fillColor('#475569').fontSize(7.1).text(result ? screeningOutcomeLabel(result)
+      : 'Screen details not recorded in this saved result.', margin, sourceY + 10,
+      { width: usable, height: 9, ellipsis: true });
+    sourceY += 20;
   }
-  const criteria = analysis.screening ?? { minRecentViews: 200, minConfidence: 'medium',
-    requireRawGrowth: true, requireShareGrowth: true };
-  const screening = `Screen: >=${number(criteria.minRecentViews)} recent views; ${criteria.minConfidence}+ reliability; `
-    + `${criteria.requireRawGrowth ? 'raw growth required' : 'raw growth optional'}; `
-    + `${criteria.requireShareGrowth ? 'share growth required' : 'share growth optional'}.`;
-  doc.fillColor('#334155').fontSize(7.4).text(screening, margin, layout.notesY,
+  doc.fillColor('#334155').fontSize(7.4).text(screeningCriteriaLabel(analysis), margin, layout.notesY,
     { width: usable, height: 13, ellipsis: true });
+  doc.fillColor('#1e3a8a').fontSize(7.4);
+  drawMixedText(doc, `Next validation: ${analysis.nextValidationStep ?? 'Not recorded in this saved result.'}`,
+    margin, layout.nextStepY, { width: usable, height: 15, ellipsis: true });
   const assumptions = analysis.assumptions?.length ? `Assumptions: ${analysis.assumptions.join(' ')}`
     : 'Assumption: selected articles represent comparable topic attention.';
   doc.fillColor('#475569').fontSize(7.4);
-  drawMixedText(doc, assumptions, margin, layout.notesY + 15,
+  drawMixedText(doc, assumptions, margin, layout.assumptionsY,
     { width: usable, height: layout.assumptionsHeight, ellipsis: true });
   doc.moveTo(margin, layout.methodY - 5).lineTo(margin + usable, layout.methodY - 5)
     .strokeColor('#cbd5e1').lineWidth(.6).stroke();
-  const methods = `Period ${analysis.period.first} to ${analysis.period.last}. User pageviews, all access; each edition uses the listed articles. Share = article views per million edition views. Missing article months count as zero only where edition traffic exists.`;
+  const methods = `Period ${analysis.period.first} to ${analysis.period.last}. User pageviews, all access. Share = article views per million edition views. 11m removes the peak and same month a year apart; * = changed growth sign. Unknown months block 11m. Rank: high quality first, then share growth, then recent views. Exact values: metrics.json.`;
   doc.fillColor('#475569').fontSize(7.1).text(methods, margin, layout.methodY,
     { width: usable, height: 30, ellipsis: true });
-  doc.fillColor('#475569').fontSize(7.1).text('Reliability is a heuristic from coverage, baseline, monthly consistency and spike concentration. Pageviews are neither unique people nor willingness to pay; editions are not countries. Redirects and title changes may split history.',
+  doc.fillColor('#475569').fontSize(7.1).text('Signal quality is a heuristic from coverage, volume, monthly consistency and spike concentration; it does not measure demand. Pageviews are neither unique people nor willingness to pay; editions are not countries. Known page moves use disjoint title periods; move months remain unknown.',
     margin, layout.limitsY, { width: usable, height: 32, ellipsis: true });
   doc.fillColor('#64748b').fontSize(7).text('Data: Wikimedia Analytics API  |  Source URLs and exact values: accompanying metrics.json',
     margin, layout.footerY, { width: usable, height: 12, link: 'https://doc.wikimedia.org/generated-data-platform/aqs/analytics-api/reference/page-views.html' });

@@ -1,0 +1,33 @@
+{
+  "retrievedAt": "2026-09-26",
+  "resolvedPageId": 9988187,
+  "sources": {
+    "move": "https://en.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&list=logevents&letype=move&letitle=Twitter&leprop=ids%7Ctitle%7Ctype%7Ctimestamp%7Cdetails&lelimit=50",
+    "oldViews": "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia.org/all-access/user/Twitter/monthly/20240901/20260831",
+    "newViews": "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia.org/all-access/user/X_%28social_network%29/monthly/20240901/20260831"
+  },
+  "events": [
+    {
+      "logid": 177838394,
+      "ns": 0,
+      "title": "Twitter",
+      "pageid": 74434175,
+      "logpage": 9988187,
+      "params": { "target_ns": 0, "target_title": "X (social network)" },
+      "type": "move",
+      "action": "move",
+      "timestamp": "2026-02-25T18:17:19Z"
+    },
+    {
+      "logid": 162706410,
+      "ns": 0,
+      "title": "X (social network)",
+      "pageid": 9988187,
+      "logpage": 72537946,
+      "params": { "target_ns": 0, "target_title": "Twitter under Elon Musk" },
+      "type": "move",
+      "action": "move",
+      "timestamp": "2024-06-17T09:08:39Z"
+    }
+  ]
+}

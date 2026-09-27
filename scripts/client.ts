@@ -22,10 +22,30 @@ export interface ArticleResolution {
   url: string;
   requestedTitle: string;
   sourceUrl: string;
+  wikidataId: string | null;
+  redirectFrom: string[];
 }
 
-export interface TrafficResult extends ApiResult {
+export interface TrafficResult extends Omit<ApiResult, 'status'> {
+  status: number | null;
   series: MonthlySeries;
+  error?: string;
+}
+
+export interface MoveEvent {
+  from: string;
+  to: string;
+  timestamp: string;
+  logId: number;
+  logpage: number;
+  ns: number;
+  targetNs: number;
+}
+
+export interface MoveLookup {
+  events: MoveEvent[];
+  urls: string[];
+  complete: boolean;
 }
 
 interface WikimediaClientOptions {
@@ -38,7 +58,9 @@ interface WikimediaClientOptions {
 
 interface MediaWikiResponse {
   query?: {
+    redirects?: Array<{ from: string; to: string }>;
     pages?: Array<{ title: string; pageid: number; ns: number; missing?: boolean;
+      pageprops?: { wikibase_item?: string };
       langlinks?: Array<{ lang: string; title: string }> }>;
     search?: Array<{ title: string; pageid: number }>;
   };
@@ -49,7 +71,14 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const ROOT = 'https://wikimedia.org/api/rest_v1/metrics/pageviews';
 const DAY = 24 * 60 * 60 * 1000;
+const RETRYABLE_STATUS = [429, 500, 502, 503, 504];
 const pad = (value: number): string => String(value).padStart(2, '0');
+
+class WikimediaRequestError extends Error {
+  constructor(message: string, readonly status: number | null) {
+    super(message);
+  }
+}
 
 function assertContactAgent(userAgent: unknown): asserts userAgent is string {
   const contact = /\([^)]*(?:https?:\/\/[^\s)]+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|User:[^\s)]+)[^)]*\)/;
@@ -150,17 +179,19 @@ export class WikimediaClient {
           signal: AbortSignal.timeout(15000),
         });
       } catch (error) {
-        if (attempt === 2) throw new Error(`Wikimedia request failed: ${url}: ${error instanceof Error ? error.message : String(error)}`);
+        if (attempt === 2) throw new WikimediaRequestError(
+          `Wikimedia request failed: ${url}: ${error instanceof Error ? error.message : String(error)}`, null);
         await this.sleep(500 * 2 ** attempt);
         continue;
       }
-      if (![429, 500, 502, 503, 504].includes(response.status) || attempt === 2) break;
+      if (!RETRYABLE_STATUS.includes(response.status) || attempt === 2) break;
       const retryAfter = Number(response.headers.get('retry-after'));
       await this.sleep(Number.isFinite(retryAfter) && retryAfter > 0
         ? Math.min(retryAfter * 1000, 30000) : 500 * 2 ** attempt);
     }
     if (!response || (response.status !== 200 && response.status !== 404)) {
-      throw new Error(`Wikimedia HTTP ${response?.status ?? 'no response'}: ${url}`);
+      throw new WikimediaRequestError(`Wikimedia HTTP ${response?.status ?? 'no response'}: ${url}`,
+        response?.status ?? null);
     }
     const record: CachedRecord = { status: response.status, data: response.status === 404 ? null : await response.json(),
       fetchedAt: new Date().toISOString() };
@@ -173,14 +204,20 @@ export class WikimediaClient {
 
   async resolveArticle(language: string, title: string): Promise<ArticleResolution> {
     const url = mediaWikiUrl(language, { action: 'query', titles: title,
-      redirects: '1', prop: 'info' });
+      redirects: '1', prop: 'info|pageprops', ppprop: 'wikibase_item' });
     const result = await this.getJson(url);
-    const page = (result.data as MediaWikiResponse | null)?.query?.pages?.[0];
+    const query = (result.data as MediaWikiResponse | null)?.query;
+    const page = query?.pages?.[0];
     if (!page || page.missing || typeof page.title !== 'string' || !Number.isSafeInteger(page.pageid)) {
       throw new Error(`article not found: ${language}:${title}`);
     }
     if (page.ns !== 0) throw new Error(`not a main-namespace article: ${language}:${title}`);
-    return { title: page.title, pageId: page.pageid,
+    const wikidataId = page.pageprops?.wikibase_item ?? null;
+    if (wikidataId !== null && !/^Q[1-9]\d*$/.test(wikidataId)) {
+      throw new Error(`invalid Wikidata ID for ${language}:${page.title}`);
+    }
+    return { title: page.title, pageId: page.pageid, wikidataId,
+      redirectFrom: (query?.redirects ?? []).map(item => item.from),
       url: `https://${language}.wikipedia.org/wiki/${encodeURIComponent(page.title.replaceAll(' ', '_'))}`,
       requestedTitle: title, sourceUrl: url };
   }
@@ -209,13 +246,53 @@ export class WikimediaClient {
   }
 
   async fetchArticleViews(language: string, title: string, first: string, last: string): Promise<TrafficResult> {
-    const result = await this.getJson(articleViewsUrl(language, title, first, last));
-    return { ...result, series: result.status === 404 ? {} : monthlySeries(result.data) };
+    const url = articleViewsUrl(language, title, first, last);
+    try {
+      const result = await this.getJson(url);
+      return { ...result, series: result.status === 404 ? {} : monthlySeries(result.data) };
+    } catch (error) {
+      if (!(error instanceof WikimediaRequestError)
+        || (error.status !== null && !RETRYABLE_STATUS.includes(error.status))) throw error;
+      return { url, status: error.status, data: null, fetchedAt: new Date().toISOString(),
+        cacheHit: false, series: {}, error: error.message };
+    }
   }
 
   async fetchProjectViews(language: string, first: string, last: string): Promise<TrafficResult> {
     const result = await this.getJson(projectViewsUrl(language, first, last));
     if (result.status === 404) throw new Error(`project traffic unavailable: ${language} ${first}..${last}`);
     return { ...result, series: monthlySeries(result.data) };
+  }
+
+  async fetchMoveEvents(language: string, formerTitle: string, pageId: number): Promise<MoveLookup> {
+    const events: MoveEvent[] = [];
+    const urls: string[] = [];
+    let continuation: Record<string, string> = {};
+    for (let page = 0; page < 10; page++) {
+      const url = mediaWikiUrl(language, { action: 'query', list: 'logevents', letype: 'move',
+        letitle: formerTitle, leprop: 'ids|title|type|timestamp|details', lelimit: 'max', ...continuation });
+      const response = await this.getJson(url);
+      urls.push(url);
+      if (response.status !== 200 || !isRecord(response.data)
+        || !isRecord(response.data.query) || !Array.isArray(response.data.query.logevents)) {
+        throw new Error(`move history unavailable: ${language}:${formerTitle}`);
+      }
+      for (const raw of response.data.query.logevents) {
+        if (!isRecord(raw) || raw.logpage !== pageId || raw.type !== 'move' || raw.ns !== 0
+          || typeof raw.title !== 'string' || typeof raw.timestamp !== 'string'
+          || !Number.isSafeInteger(raw.logid) || !isRecord(raw.params)
+          || raw.params.target_ns !== 0 || typeof raw.params.target_title !== 'string') continue;
+        events.push({ from: raw.title, to: raw.params.target_title,
+          timestamp: raw.timestamp, logId: raw.logid as number, logpage: pageId,
+          ns: 0, targetNs: 0 });
+      }
+      const next = response.data.continue;
+      if (next === undefined) return { events, urls, complete: true };
+      if (!isRecord(next) || typeof next.lecontinue !== 'string') {
+        throw new Error(`invalid move history continuation: ${language}:${formerTitle}`);
+      }
+      continuation = Object.fromEntries(Object.entries(next).filter(([, value]) => typeof value === 'string')) as Record<string, string>;
+    }
+    return { events, urls, complete: false };
   }
 }

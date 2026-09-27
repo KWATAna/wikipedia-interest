@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WikimediaClient, articleViewsUrl, projectViewsUrl } from '../scripts/client.ts';
@@ -78,6 +78,45 @@ test('404 is preserved as no observations, not invented traffic', async () => {
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test('exhausted server error returns unavailable article traffic with provenance', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wiki-interest-'));
+  let calls = 0;
+  const client = new WikimediaClient({ cacheDir: dir, userAgent: TEST_AGENT,
+    sleep: async () => {}, fetchImpl: async () => { calls++; return new Response('{}', { status: 503 }); } });
+  try {
+    const result = await client.fetchArticleViews('en', 'Jupiter', '2024-01', '2024-03');
+    assert.equal(calls, 3);
+    assert.equal(result.status, 503);
+    assert.deepEqual(result.series, {});
+    assert.match(result.url, /Jupiter/);
+    assert.match(result.error, /503/);
+    assert.ok(!Number.isNaN(Date.parse(result.fetchedAt)));
+    assert.equal(result.cacheHit, false);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('exhausted network error returns unavailable article traffic without an HTTP status', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wiki-interest-'));
+  const client = new WikimediaClient({ cacheDir: dir, userAgent: TEST_AGENT,
+    sleep: async () => {}, fetchImpl: async () => { throw new Error('offline'); } });
+  try {
+    const result = await client.fetchArticleViews('en', 'Jupiter', '2024-01', '2024-03');
+    assert.equal(result.status, null);
+    assert.deepEqual(result.series, {});
+    assert.match(result.error, /offline/);
+    assert.match(result.url, /Jupiter/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('authorization failures still stop analysis', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wiki-interest-'));
+  const client = new WikimediaClient({ cacheDir: dir, userAgent: TEST_AGENT,
+    fetchImpl: async () => new Response('{}', { status: 403 }) });
+  try {
+    await assert.rejects(client.fetchArticleViews('en', 'Jupiter', '2024-01', '2024-03'), /403/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('title resolution follows redirects and rejects missing pages', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'wiki-interest-'));
   const client = new WikimediaClient({ cacheDir: dir, userAgent: TEST_AGENT, fetchImpl: async url => {
@@ -89,5 +128,67 @@ test('title resolution follows redirects and rejects missing pages', async () =>
   try {
     assert.equal((await client.resolveArticle('en', 'Intermittent_fasting')).title, 'Intermittent fasting');
     await assert.rejects(client.resolveArticle('en', 'Nope'), /not found/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('resolution records a Wikidata concept ID and distinguishes redirect from normalization', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wiki-interest-'));
+  const client = new WikimediaClient({ cacheDir: dir, userAgent: TEST_AGENT, fetchImpl: async url => {
+    const title = new URL(url).searchParams.get('titles');
+    assert.equal(new URL(url).searchParams.get('prop'), 'info|pageprops');
+    assert.equal(new URL(url).searchParams.get('ppprop'), 'wikibase_item');
+    return new Response(JSON.stringify({ query: {
+      redirects: title === 'Twitter' ? [{ from: 'Twitter', to: 'X (social network)' }] : [],
+      pages: [{ pageid: 9988187, ns: 0, title: title === 'Twitter' ? 'X (social network)' : 'Astronomy',
+        pageprops: title === 'Twitter' ? { wikibase_item: 'Q918' } : {} }]
+    } }), { status: 200 });
+  } });
+  try {
+    const moved = await client.resolveArticle('en', 'Twitter');
+    assert.equal(moved.wikidataId, 'Q918');
+    assert.deepEqual(moved.redirectFrom, ['Twitter']);
+    assert.match(moved.sourceUrl, /ppprop=wikibase_item/);
+    const normalized = await client.resolveArticle('en', 'astronomy');
+    assert.equal(normalized.wikidataId, null);
+    assert.deepEqual(normalized.redirectFrom, []);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('move lookup follows continuation and accepts logpage, not the current title pageid', async () => {
+  const fixture = JSON.parse(await readFile(new URL('./fixtures/phase3-twitter-move.json', import.meta.url)));
+  const dir = await mkdtemp(join(tmpdir(), 'wiki-interest-'));
+  const urls = [];
+  const client = new WikimediaClient({ cacheDir: dir, userAgent: TEST_AGENT, fetchImpl: async url => {
+    urls.push(url);
+    const params = new URL(url).searchParams;
+    assert.equal(params.get('list'), 'logevents');
+    assert.equal(params.get('letitle'), 'Twitter');
+    assert.equal(params.get('letype'), 'move');
+    return new Response(JSON.stringify(urls.length === 1
+      ? { continue: { lecontinue: 'cursor', continue: '-||' }, query: { logevents: [fixture.events[1]] } }
+      : { query: { logevents: [fixture.events[0]] } }), { status: 200 });
+  } });
+  try {
+    const found = await client.fetchMoveEvents('en', 'Twitter', 9988187);
+    assert.equal(urls.length, 2);
+    assert.equal(new URL(urls[1]).searchParams.get('lecontinue'), 'cursor');
+    assert.equal(found.complete, true);
+    assert.equal(found.events.length, 1);
+    assert.equal(found.events[0].logId, 177838394);
+    assert.equal(found.events[0].from, 'Twitter');
+    assert.equal(found.events[0].to, 'X (social network)');
+    assert.equal(found.urls.length, 2);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('move lookup reports incomplete pagination instead of no move', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wiki-interest-'));
+  let page = 0;
+  const client = new WikimediaClient({ cacheDir: dir, userAgent: TEST_AGENT, fetchImpl: async () =>
+    new Response(JSON.stringify({ continue: { lecontinue: String(++page), continue: '-||' },
+      query: { logevents: [] } }), { status: 200 }) });
+  try {
+    const found = await client.fetchMoveEvents('en', 'Twitter', 9988187);
+    assert.equal(found.complete, false);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
