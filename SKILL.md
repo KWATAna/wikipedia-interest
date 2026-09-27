@@ -1,6 +1,6 @@
 ---
 name: wikipedia-interest
-description: Use when a B2C founder wants to compare topic interest across Wikipedia language editions, inspect pageview growth and signal quality, or produce a brief chart and PDF report to prioritize further market validation.
+description: Use when comparing interest in a topic across Wikipedia language editions using article pageviews, growth, relative share, and signal quality, or creating a chart and PDF report for that comparison.
 ---
 
 # Wikipedia interest signals

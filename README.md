@@ -21,6 +21,8 @@ To install from GitHub once the repository is published, clone it directly to `~
 
 Then ask, for example: “Use `$wikipedia-interest` to compare interest in intermittent fasting on Polish and Czech Wikipedia over the latest 24 months. Check that the selected articles cover comparable topics, create the chart and one-page PDF, and explain raw growth, edition-relative growth, signal quality, and limitations.” In Claude Code, invoke `/wikipedia-interest` instead. A matching natural-language request can also activate the skill automatically. Agents without built-in skill discovery can be given the folder and told to read `SKILL.md` and run the bundled CLI.
 
+For copy-ready prompts that test both automatic and explicit activation in Codex, see the [Codex testing guide](docs/testing-in-codex.md).
+
 ## Workflow logic
 
 ```mermaid
